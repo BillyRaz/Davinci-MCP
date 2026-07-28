@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "davinci-resolve-mcp"
+version = "0.1.0"
+description = "Production-oriented MCP server for the official DaVinci Resolve scripting API"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = ["mcp>=1.9,<2", "pydantic>=2.7,<3", "Pillow>=10,<13"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.9", "mypy>=1.14"]
+
+[project.scripts]
+davinci-mcp = "server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["resolve", "tools"]
+include = ["server.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+output/
+output/captures/
+output/comparisons/
+output/logs/
+output/reports/
+output/validation/
+*.log
