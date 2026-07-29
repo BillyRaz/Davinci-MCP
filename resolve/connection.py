@@ -7,30 +7,33 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from .config import load_config
 from .errors import ConnectionError
 from .utils import require
-
-DEFAULT_MODULE_PATH = Path(
-    "/Library/Application Support/Blackmagic Design/DaVinci Resolve/"
-    "Developer/Scripting/Modules"
-)
 
 
 def resolve_module_path(value: str | None = None) -> Path:
     """Accept Blackmagic's official Scripting root or the final Modules directory."""
-    configured = Path(
-        value
-        or os.getenv("RESOLVE_SCRIPT_API")
-        or DEFAULT_MODULE_PATH
-    ).expanduser()
-    return configured if configured.name == "Modules" else configured / "Modules"
+    configured = Path(value).expanduser() if value else load_config().script_api_path
+    if configured is None:
+        raise ConnectionError(
+            "Resolve scripting API path was not discovered. Set RESOLVE_SCRIPT_API "
+            "or script_api_path in the user config file."
+        )
+    return (
+        configured
+        if configured.name.casefold() == "modules"
+        else configured / "Modules"
+    )
 
 
 class ResolveConnection:
     """Owns a lazy Resolve handle without importing Resolve at server startup."""
 
     def __init__(self, module_path: str | None = None) -> None:
+        config = load_config()
         self.module_path = resolve_module_path(module_path)
+        self.native_library = config.script_library_path
         self._resolve: Any = None
         self._lock = threading.RLock()
 
@@ -40,6 +43,8 @@ class ResolveConnection:
                 return self._resolve
             if str(self.module_path) not in sys.path:
                 sys.path.insert(0, str(self.module_path))
+            if self.native_library:
+                os.environ.setdefault("RESOLVE_SCRIPT_LIB", str(self.native_library))
             try:
                 module = importlib.import_module("DaVinciResolveScript")
                 resolve = module.scriptapp("Resolve")

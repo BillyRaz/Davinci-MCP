@@ -1,54 +1,205 @@
 # DaVinci Resolve MCP
 
-A modular stdio MCP server for DaVinci Resolve on macOS. It uses Blackmagic
-Design's documented `DaVinciResolveScript` module and filesystem operations
-exclusively. It never simulates clicks, captures the macOS screen, uses OCR, or
-claims unsupported Resolve API capabilities.
+A 64-tool stdio MCP server for DaVinci Resolve’s documented scripting API. Windows
+11 is the primary platform, macOS is supported, and Linux support is best effort.
+The project does not use UI automation, OCR, simulated input, or undocumented
+Resolve methods.
 
-Server location:
+## Windows Quick Start
 
-```text
-/Applications/DaVinci Resolve/davinci-mcp
+Requirements: Windows 11, Python 3.12 or newer, Git, and DaVinci Resolve. Live
+external control may require Resolve Studio, depending on the installed edition
+and Blackmagic’s scripting support.
+
+Use a writable source location—not `Program Files`:
+
+```powershell
+cd "$env:USERPROFILE\Documents\GitHub"
+git clone https://github.com/BillyRaz/Davinci-MCP.git
+cd Davinci-MCP
+.\setup-davinci-mcp.ps1
 ```
 
-## Quick Start
+Setup prefers `py -3.12`, falls back to a compatible `python`, creates `.venv`,
+installs `.[dev]`, generates the user config, and runs pytest, Ruff, and offline
+validation. It never installs packages silently, requests Administrator access,
+or changes execution policy globally.
 
-First-time setup:
+Run and validate:
 
-```bash
+```powershell
+.\run-davinci-mcp.ps1
+.\validate-davinci-mcp.ps1
+.\validate-davinci-mcp.ps1 -Live
+```
+
+The `.cmd` wrappers provide equivalent double-click entry points. The live option
+is read-only and should only be used with Resolve Studio open. Resolve Free
+external scripting limitations are reported as warnings/unsupported capability,
+not MCP defects.
+
+To create an optional Desktop shortcut:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\create_windows_shortcut.ps1
+```
+
+The script only creates `Run DaVinci MCP.lnk`; it does not alter security settings.
+
+## Windows Codex and MCP Configuration
+
+Keep executable and argument as separate values. Replace the example clone path:
+
+```json
+{
+  "mcpServers": {
+    "davinci-resolve": {
+      "command": "C:\\Users\\YOUR_NAME\\Documents\\GitHub\\Davinci-MCP\\.venv\\Scripts\\python.exe",
+      "args": [
+        "C:\\Users\\YOUR_NAME\\Documents\\GitHub\\Davinci-MCP\\server.py"
+      ]
+    }
+  }
+}
+```
+
+For Codex, add the server to the MCP configuration used by your Codex installation;
+inspect and preserve existing servers before editing it. Generic stdio and VS
+Code-compatible clients can use the same `command`/`args` object.
+
+Windows troubleshooting:
+
+- “Missing `.venv`”: run `.\setup-davinci-mcp.ps1`.
+- Python not found: install Python 3.12+ with the `py` launcher, then reopen the shell.
+- Resolve connection unavailable: open Resolve Studio and enable local External
+  scripting in Resolve Preferences. Do not change preferences automatically.
+- Permission errors: clone under Documents or Developer, not `Program Files`.
+- Paths are discovered from `ProgramFiles`, `ProgramData`, `APPDATA`,
+  `LOCALAPPDATA`, and `USERPROFILE`; explicit environment overrides take priority.
+
+## macOS Installation
+
+Existing macOS users can continue using:
+
+```zsh
 cd "/Applications/DaVinci Resolve/davinci-mcp"
 ./setup-davinci-mcp.command
-```
-
-Then start the stdio server:
-
-```bash
 ./run-davinci-mcp.command
 ```
 
-The launchers never change Resolve preferences and never install anything
-silently.
+Apple Silicon and Intel are detected automatically. The launcher retains
+Blackmagic’s official scripting locations:
 
-## First-Time Setup
-
-Requirements:
-
-- macOS on Apple Silicon or Intel
-- Python 3.12
-- DaVinci Resolve with external scripting support
-- an MCP client supporting stdio
-
-The setup launcher creates `.venv`, installs the runtime and development
-dependencies, then runs pytest, Ruff, and offline validation:
-
-```text
-/Applications/DaVinci Resolve/davinci-mcp/setup-davinci-mcp.command
+```zsh
+export RESOLVE_SCRIPT_API="/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting"
+export RESOLVE_SCRIPT_LIB="/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so"
+export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$RESOLVE_SCRIPT_API/Modules"
 ```
 
-Equivalent manual commands:
+`RESOLVE_SCRIPT_API` accepts either the parent `Scripting` directory or its direct
+`Modules` directory. A generic/Codex macOS configuration is:
 
-```bash
-cd "/Applications/DaVinci Resolve/davinci-mcp"
+```json
+{
+  "mcpServers": {
+    "davinci-resolve": {
+      "command": "/Applications/DaVinci Resolve/davinci-mcp/.venv/bin/python",
+      "args": ["/Applications/DaVinci Resolve/davinci-mcp/server.py"]
+    }
+  }
+}
+```
+
+## Linux Installation (Best Effort)
+
+Linux discovery checks `/opt/resolve`, `/opt/resolve/Developer/Scripting`, and
+common libraries under `/opt/resolve/libs`, while honoring all overrides:
+
+```sh
+./setup-davinci-mcp.sh
+./run-davinci-mcp.sh
+./validate-davinci-mcp.sh
+```
+
+Linux paths and launchers are mock-tested, but live Resolve behavior is not claimed
+as fully validated.
+
+## Capture Support
+
+Capture tools export genuine Resolve output only:
+
+- `capture_current_frame`
+- `capture_clip_reference`
+- `capture_before_after_reference`
+- `list_captured_references`
+- `open_capture_folder`
+- `delete_captured_reference`
+
+Capture uses documented current-frame export when exposed, Gallery still
+export/delete as a fallback, or a supported temporary one-frame render path. Pillow
+is used only to combine already-exported images or calculate technical image-change
+metrics. A “before” is never claimed unless it was actually captured first.
+
+Every generated file result includes its absolute path. Metadata includes the
+project, timeline, frame/timecode, timestamp, and actual capture method.
+
+## Validation
+
+Offline validation checks Python, dependencies, platform discovery, scripting
+paths, native library, writable output, config, presets, and MCP registration.
+Live validation additionally inspects the read-only connection/project/timeline/
+clip/Gallery/render capabilities. It does not apply grades, start renders, or
+change the active timeline.
+
+Reports use `passed`, `warning`, `failed`, `skipped`, and `unsupported`, and are
+written as JSON and Markdown with timestamped copies.
+
+## Configuration and Output Paths
+
+Default config:
+
+| Platform | Config |
+|---|---|
+| Windows | `%APPDATA%\DavinciMCP\config.toml` |
+| macOS | `~/Library/Application Support/DavinciMCP/config.toml` |
+| Linux | `${XDG_CONFIG_HOME:-~/.config}/davinci-mcp/config.toml` |
+
+Default output root:
+
+| Platform | Output |
+|---|---|
+| Windows | `%LOCALAPPDATA%\DavinciMCP` |
+| macOS | `~/Library/Application Support/DavinciMCP` |
+| Linux | `${XDG_DATA_HOME:-~/.local/share}/DavinciMCP` |
+
+Each root contains `captures`, `comparisons`, `validation`, `logs`, `reports`,
+`presets`, and `cache`.
+
+Older macOS artifacts at
+`/Applications/DaVinci Resolve/davinci-mcp/output` are left untouched. Copy wanted
+files manually into the new Application Support subdirectories; no automatic move
+or deletion occurs.
+
+Environment variables override TOML configuration:
+
+- `DAVINCI_RESOLVE_HOME`
+- `RESOLVE_SCRIPT_API`
+- `RESOLVE_SCRIPT_LIB`
+- `DAVINCI_MCP_OUTPUT_DIR`
+- `DAVINCI_MCP_PRESET_DIR`
+- `DAVINCI_MCP_LOG_LEVEL`
+- `DAVINCI_MCP_CONNECTION_MODE`
+- `DAVINCI_MCP_CAPTURE_FORMAT`
+- `DAVINCI_MCP_TEMP_RENDER_DIR`
+- `DAVINCI_MCP_CONNECTION_TIMEOUT`
+- `DAVINCI_MCP_RENDER_TIMEOUT`
+
+Discovery priority is explicit override, existing discovered installation, known
+platform default, then a clear validation failure when the selected path is absent.
+
+## Development and Testing
+
+```sh
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 .venv/bin/python -m pytest
@@ -56,255 +207,6 @@ python3.12 -m venv .venv
 .venv/bin/python scripts/offline_validate.py
 ```
 
-The `dev` extra is required for pytest, Ruff, and mypy. Runtime-only installation
-can use `.venv/bin/python -m pip install -e .`.
-
-## Running the Server
-
-Main launcher:
-
-```text
-/Applications/DaVinci Resolve/davinci-mcp/run-davinci-mcp.command
-```
-
-The launcher resolves its own directory safely, checks `.venv/bin/python`,
-creates all output folders, exports Blackmagic's official environment
-variables, prints the log path, and preserves stdio for MCP. It does not install
-packages.
-
-An MCP client should normally execute `.venv/bin/python` and `server.py`
-directly, as shown below.
-
-## Running by Double-Click
-
-Double-click either:
-
-```text
-/Applications/DaVinci Resolve/davinci-mcp/run-davinci-mcp.command
-~/Desktop/Run DaVinci MCP.command
-```
-
-The Desktop launcher only forwards to the main launcher. A `.command` window is
-useful for diagnostics, but a configured MCP client is needed to call tools.
-When startup fails in an interactive Terminal, the window waits for a keypress.
-
-## Connecting Codex
-
-Codex reads personal configuration from:
-
-```text
-~/.codex/config.toml
-```
-
-Add this table while preserving every existing setting and MCP server:
-
-```toml
-[mcp_servers.davinci-resolve]
-command = "/Applications/DaVinci Resolve/davinci-mcp/.venv/bin/python"
-args = ["/Applications/DaVinci Resolve/davinci-mcp/server.py"]
-
-[mcp_servers.davinci-resolve.env]
-DAVINCI_MCP_LOG_LEVEL = "INFO"
-DAVINCI_MCP_OUTPUT_DIR = "/Applications/DaVinci Resolve/davinci-mcp/output"
-RESOLVE_SCRIPT_API = "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting"
-RESOLVE_SCRIPT_LIB = "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so"
-PYTHONPATH = "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules"
-```
-
-A trusted repository can instead use a project-local `.codex/config.toml`.
-Inspect either file before editing it; do not replace unrelated configuration.
-
-For a generic stdio client using JSON, place this object in that client's
-documented MCP configuration file:
-
-```json
-{
-  "mcpServers": {
-    "davinci-resolve": {
-      "command": "/Applications/DaVinci Resolve/davinci-mcp/.venv/bin/python",
-      "args": [
-        "/Applications/DaVinci Resolve/davinci-mcp/server.py"
-      ],
-      "env": {
-        "DAVINCI_MCP_LOG_LEVEL": "INFO",
-        "DAVINCI_MCP_OUTPUT_DIR": "/Applications/DaVinci Resolve/davinci-mcp/output",
-        "RESOLVE_SCRIPT_API": "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting",
-        "RESOLVE_SCRIPT_LIB": "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so",
-        "PYTHONPATH": "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules"
-      }
-    }
-  }
-}
-```
-
-Paths containing spaces remain single JSON strings: `command` and each `args`
-element are separate values. Generic clients choose their own configuration
-location; consult that client's documentation rather than guessing a filename.
-
-## Screenshot and Reference Capture
-
-These are Resolve-exported reference frames, not operating-system screenshots.
-The installed API's documented `Project.ExportCurrentFrameAsStill(filePath)` is
-the primary capture method.
-
-- `capture_current_frame` exports the active timeline frame and JSON metadata.
-- `capture_clip_reference` finds a clip by Resolve unique ID or exact name,
-  temporarily moves the playhead to `current`, `first`, `middle`, `last`, or a
-  `custom` timeline frame, exports it, and restores the original playhead.
-- `capture_before_after_reference` requires two already-exported images. It
-  preserves genuine before/after files and optionally uses Pillow to place them
-  side by side. It never invents a missing before frame.
-- `list_captured_references` reports every file with its absolute path.
-- `open_capture_folder` opens the capture folder through the macOS `open`
-  filesystem command.
-- `delete_captured_reference` deletes only an artifact resolved beneath the
-  configured output root.
-
-Side-by-side reports may include a mean absolute RGB difference. This is a
-technical image-change measurement, not pixel-level color validation or an
-artistic-quality judgment.
-
-Gallery `GrabStill`, `ExportStills`, and `DeleteStills` are capability-checked
-where available. A one-frame render is not started by validation and is never
-started without an explicit capture request.
-
-## Validation
-
-Read-only validation tools:
-
-```text
-validate_resolve_connection
-validate_current_project
-validate_current_timeline
-validate_current_clip
-validate_capture_support
-validate_grade_application
-validate_render_configuration
-run_full_validation
-get_latest_validation_report
-```
-
-Statuses are `passed`, `warning`, `failed`, `skipped`, or `unsupported`.
-Unsupported public API features are not failures. Each item includes its check
-name, message, technical detail, suggested fix, and UTC timestamp.
-
-Offline validation:
-
-```bash
-.venv/bin/python scripts/offline_validate.py
-```
-
-Optional read-only live validation:
-
-```bash
-.venv/bin/python scripts/live_validate.py
-```
-
-Live validation does not apply grades, export frames, start renders, move the
-playhead, or modify the timeline. `validate_grade_application` checks only
-observable state supplied after a real operation: the DRX exists, the operation
-reported success, the target still exists, version information where exposed,
-and genuine before/after artifacts exist.
-
-## Output File Locations
-
-Default locations:
-
-```text
-Generated captures:
-/Applications/DaVinci Resolve/davinci-mcp/output/captures
-
-Comparisons:
-/Applications/DaVinci Resolve/davinci-mcp/output/comparisons
-
-Validation reports:
-/Applications/DaVinci Resolve/davinci-mcp/output/validation
-
-Logs:
-/Applications/DaVinci Resolve/davinci-mcp/output/logs
-
-Additional reports:
-/Applications/DaVinci Resolve/davinci-mcp/output/reports
-```
-
-Set `DAVINCI_MCP_OUTPUT_DIR` to override the common output root. Every tool that
-creates a file returns its exact absolute path. Full validation writes:
-
-```text
-output/validation/latest-validation.json
-output/validation/latest-validation.md
-output/validation/validation-<UTC timestamp>.json
-output/validation/validation-<UTC timestamp>.md
-```
-
-## Resolve Must Be Open
-
-Resolve must be running with a project and timeline for live inspection or
-capture. In Resolve, enable local external scripting under:
-
-```text
-DaVinci Resolve > Preferences > System > General > External scripting
-```
-
-Restart Resolve if that preference changed. Offline tests and validation do not
-need Resolve.
-
-## Free vs Studio limitations
-
-API availability and scripting permissions vary by Resolve edition and version.
-This server feature-checks installed proxy objects and returns `unsupported`
-when a documented method is absent. Studio-only AI features are not used.
-External scripting may require Resolve Studio depending on the installed
-Resolve release and licensing.
-
-The official API does not create or rewire color nodes, change node labels,
-report timeline multi-selection, apply an in-memory Gallery still as a grade,
-or expose numerical scopes/pixel statistics. Authored `.drx` templates are used
-for grading through documented `Graph.ApplyGradeFromDRX`.
-
-## Troubleshooting
-
-- **Missing `.venv`:** run `setup-davinci-mcp.command`.
-- **Module cannot load:** verify the official paths below and the installed
-  `DaVinciResolveScript.py`.
-- **No scripting handle:** open Resolve and enable local External scripting.
-- **No project/timeline:** open both before live validation or capture.
-- **No clip:** move the playhead over a video clip or use its unique ID.
-- **Capture rejected:** confirm the project/timeline is active and choose a
-  writable output directory.
-- **Duplicate output:** choose another name or pass `overwrite=true`.
-- **No registered look:** register an existing `.drx` using
-  `register_powergrade`.
-- **Protocol output looks unreadable:** stdout is reserved for MCP messages;
-  inspect `output/logs`.
-
-## macOS permissions
-
-The project needs write permission only for its output directory and local
-catalog. `open_capture_folder` asks Finder to open a directory, but capture does
-not use Screen Recording, Accessibility, camera, microphone, AppleScript,
-Automator, or mouse/keyboard control. The project does not alter macOS security
-settings.
-
-## Official Resolve environment variables
-
-Blackmagic's installed scripting README defines:
-
-```bash
-export RESOLVE_SCRIPT_API="/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting"
-export RESOLVE_SCRIPT_LIB="/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so"
-export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$RESOLVE_SCRIPT_API/Modules"
-```
-
-The server accepts `RESOLVE_SCRIPT_API` as either this official Scripting root
-or the final `Modules` directory.
-
-## Existing capabilities
-
-The server also supports project/timeline/clip inspection, media-pool search,
-timeline markers, documented color-node inspection and enable state, ASC CDL,
-DRX grade application, Gallery album/still export, render configuration and
-queue control, and explicit clip-addressed batch workflows.
-
-See [Architecture](docs/ARCHITECTURE.md), [tool reference](docs/TOOLS.md),
-[installation](docs/INSTALLATION.md), and [extension guide](docs/EXTENDING.md).
+On Windows, replace `.venv/bin/python` with
+`.venv\Scripts\python.exe`. GitHub Actions runs Python 3.12 tests and Ruff on
+Windows, macOS, and Ubuntu without attempting a live Resolve connection.

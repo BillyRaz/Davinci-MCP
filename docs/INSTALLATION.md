@@ -1,39 +1,35 @@
 # Installation guide
 
+See the repository [README](../README.md) for the complete Windows-first guide,
+MCP client examples, platform paths, and troubleshooting.
+
 ## Requirements
 
-- macOS on Apple Silicon or Intel
-- DaVinci Resolve Studio 20 or newer
+- Windows 11 (primary), macOS Apple Silicon/Intel, or Linux (best effort)
 - Python 3.12+
+- DaVinci Resolve; external live scripting may require Resolve Studio
 - An MCP client that supports stdio servers
 
-Enable local External scripting in Resolve Preferences, restart Resolve if the
-setting changed, and open a project.
+Use the platform setup launcher from a writable clone:
 
-Create a virtual environment:
-
-```bash
-cd "/Applications/DaVinci Resolve/davinci-mcp"
-python3.12 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/pip install -e .
+```powershell
+# Windows
+.\setup-davinci-mcp.ps1
 ```
 
-Run a protocol server:
-
-```bash
-.venv/bin/python server.py
+```zsh
+# macOS
+./setup-davinci-mcp.command
 ```
 
-Do not expect human-readable stdout: stdio is reserved for MCP messages.
+```sh
+# Linux
+./setup-davinci-mcp.sh
+```
 
-## Troubleshooting
+Each launcher creates `.venv`, installs `.[dev]`, generates the user
+`config.toml`, and runs tests, Ruff, and offline validation. Resolve preferences
+are never changed automatically.
 
-- **Module cannot load:** check `RESOLVE_SCRIPT_API` and the installed
-  `Developer/Scripting/Modules/DaVinciResolveScript.py`.
-- **No scripting handle:** keep Studio running and verify External scripting.
-- **No project/timeline:** open them in Resolve before calling contextual tools.
-- **Operation rejected:** confirm the active page/context, valid clip address,
-  output folder, render format/codec, or DRX path.
-- **Node creation unavailable:** author/export a DRX; this is an API limitation,
-  not a missing permission.
+For live tools, open Resolve with a project and timeline and enable supported
+local External scripting. Stdio stdout is reserved for MCP protocol messages.

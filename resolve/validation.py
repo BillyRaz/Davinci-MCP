@@ -9,27 +9,21 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-import platform
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
 from .capture import CaptureService
+from .config import load_config
 from .connection import ResolveConnection
 from .errors import NotFoundError
 from .output import OutputPaths, timestamp_slug
+from .platforms import PlatformPaths, detect_platform
 from .powergrade import PowerGradeCatalog
 from .timeline import TimelineService
 
 Status = Literal["passed", "warning", "failed", "skipped", "unsupported"]
-RESOLVE_SCRIPT_ROOT = Path(
-    "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting"
-)
-FUSION_NATIVE_LIBRARY = Path(
-    "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/"
-    "Fusion/fusionscript.so"
-)
 EXPECTED_MCP_TOOLS = {
     "capture_current_frame",
     "capture_clip_reference",
@@ -73,12 +67,15 @@ class ValidationService:
         output: OutputPaths | None = None,
         captures: CaptureService | None = None,
         grades: PowerGradeCatalog | None = None,
+        platform_paths: PlatformPaths | None = None,
     ) -> None:
         self.connection = connection
         self.output = output or OutputPaths()
         self.captures = captures or CaptureService(connection, self.output)
         self.timelines = TimelineService(connection)
         self.grades = grades
+        self.platform_paths = platform_paths or detect_platform()
+        self.config = load_config(self.platform_paths)
 
     def connection_check(self) -> dict[str, Any]:
         try:
@@ -95,10 +92,11 @@ class ValidationService:
         except Exception as exc:
             return validation_item(
                 "resolve_api_connection",
-                "failed",
+                "warning",
                 "Could not connect to Resolve",
                 repr(exc),
-                "Open Resolve, enable local External scripting, and retry.",
+                "Open Resolve Studio and enable local External scripting. Resolve Free "
+                "may not expose the external scripting connection on this platform.",
             )
 
     def project_check(self) -> dict[str, Any]:
@@ -322,26 +320,68 @@ class ValidationService:
 
     def _offline_checks(self) -> list[dict[str, Any]]:
         paths = self.output.ensure()
+        discovered = self.platform_paths
+        installation = discovered.resolve
         dependency_results = {
             name: importlib.util.find_spec(name) is not None
             for name in ("mcp", "pydantic", "PIL")
         }
         version_ok = sys.version_info >= (3, 12)
-        module_path = Path(
-            os.getenv("RESOLVE_SCRIPT_API", str(RESOLVE_SCRIPT_ROOT))
-        )
-        if module_path.name != "Modules":
+        module_path = self.config.script_api_path
+        if module_path and module_path.name.casefold() != "modules":
             module_path /= "Modules"
+        module_path = module_path or Path("__resolve_scripting_path_not_discovered__")
         module_file = module_path / "DaVinciResolveScript.py"
+        native_library = self.config.script_library_path
         writable = os.access(paths["captures"], os.W_OK)
         grade_entries = self.grades.search() if self.grades else []
         return [
             validation_item(
+                "detected_platform",
+                "passed" if discovered.info.system != "Unknown" else "warning",
+                f"Detected {discovered.info.system} on {discovered.info.architecture}",
+                {
+                    "operating_system": discovered.info.system,
+                    "architecture": discovered.info.architecture,
+                    "launcher_type": discovered.info.launcher_type,
+                    "temporary_directory": str(discovered.info.temporary_directory),
+                },
+            ),
+            validation_item(
                 "python_version",
                 "passed" if version_ok else "failed",
-                f"Python {platform.python_version()} is running",
-                {"executable": sys.executable, "required": ">=3.12"},
-                "Run validation with .venv/bin/python." if not version_ok else "",
+                f"Python {sys.version_info.major}.{sys.version_info.minor} is running",
+                {
+                    "executable": sys.executable,
+                    "required": ">=3.12",
+                    "virtual_environment": str(
+                        discovered.virtual_environment_python
+                    ),
+                },
+                "Run validation with the project virtual-environment Python."
+                if not version_ok
+                else "",
+            ),
+            validation_item(
+                "resolve_installation",
+                "passed"
+                if installation.executable and installation.executable.is_file()
+                else "warning",
+                "Resolve installation paths were discovered",
+                {
+                    "edition": installation.edition,
+                    "home": str(installation.home) if installation.home else None,
+                    "executable": (
+                        str(installation.executable)
+                        if installation.executable
+                        else None
+                    ),
+                    "source": installation.discovery_source,
+                },
+                "Install Resolve or set DAVINCI_RESOLVE_HOME."
+                if not installation.executable
+                or not installation.executable.is_file()
+                else "",
             ),
             validation_item(
                 "required_python_dependencies",
@@ -359,10 +399,40 @@ class ValidationService:
             ),
             validation_item(
                 "fusion_native_library",
-                "passed" if FUSION_NATIVE_LIBRARY.is_file() else "failed",
+                "passed" if native_library and native_library.is_file() else "failed",
                 "Fusion native scripting library path was inspected",
-                str(FUSION_NATIVE_LIBRARY),
-                "Install Resolve or set RESOLVE_SCRIPT_LIB to fusionscript.so.",
+                str(native_library) if native_library else None,
+                "Install Resolve or set RESOLVE_SCRIPT_LIB to the platform's "
+                "fusionscript library.",
+            ),
+            validation_item(
+                "configuration",
+                "passed" if discovered.configuration_directory.parent.exists() else "warning",
+                "User configuration location was resolved",
+                {
+                    "config_file": str(discovered.configuration_file),
+                    "output_directory": str(self.output.root),
+                    "connection_mode": self.config.connection_mode,
+                    "capture_format": self.config.capture_format,
+                    "temporary_render_directory": str(
+                        self.config.temporary_render_directory
+                    ),
+                    "connection_timeout_seconds": (
+                        self.config.connection_timeout_seconds
+                    ),
+                    "render_timeout_seconds": self.config.render_timeout_seconds,
+                },
+                "Run the platform setup launcher to generate config.toml.",
+            ),
+            validation_item(
+                "external_scripting_availability",
+                "warning",
+                "External scripting availability depends on the installed Resolve edition",
+                {
+                    "edition": installation.edition,
+                    "connection_mode": self.config.connection_mode,
+                },
+                "Use Resolve Studio where the Free edition does not expose external scripting.",
             ),
             validation_item(
                 "capture_folder_write_permission",

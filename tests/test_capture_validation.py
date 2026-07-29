@@ -215,7 +215,7 @@ def test_missing_resolve_connection_behavior(tmp_path: Path) -> None:
         OutputPaths(tmp_path),
     )
     result = service.connection_check()
-    assert result["status"] == "failed"
+    assert result["status"] == "warning"
     assert "Resolve closed" in result["technical_detail"]
 
 

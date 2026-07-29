@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
-import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .config import load_config
 from .errors import NotFoundError, ValidationError
 
-DEFAULT_OUTPUT_ROOT = Path("/Applications/DaVinci Resolve/davinci-mcp/output")
-OUTPUT_SUBDIRECTORIES = ("captures", "comparisons", "validation", "logs", "reports")
+OUTPUT_SUBDIRECTORIES = (
+    "captures",
+    "comparisons",
+    "validation",
+    "logs",
+    "reports",
+    "presets",
+    "cache",
+)
 
 
 def utc_now() -> datetime:
@@ -34,7 +41,7 @@ def safe_filename(value: str | None, fallback: str = "capture") -> str:
 
 class OutputPaths:
     def __init__(self, root: str | Path | None = None) -> None:
-        configured = root or os.getenv("DAVINCI_MCP_OUTPUT_DIR") or DEFAULT_OUTPUT_ROOT
+        configured = root or load_config().output_directory
         self.root = Path(configured).expanduser().resolve()
 
     def ensure(self) -> dict[str, str]:
@@ -69,4 +76,3 @@ class OutputPaths:
             if resolved.is_file():
                 return resolved
         raise NotFoundError(f"Generated artifact was not found under {self.root}: {reference}")
-

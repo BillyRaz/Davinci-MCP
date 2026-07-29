@@ -12,6 +12,7 @@ from typing import Any, Literal
 from .connection import ResolveConnection
 from .errors import CapabilityError, NotFoundError, OperationError, ValidationError
 from .output import OutputPaths, safe_filename, timestamp_slug
+from .platforms import folder_open_command
 from .timeline import TimelineService
 
 ImageFormat = Literal["png", "jpg"]
@@ -397,9 +398,14 @@ class CaptureService:
 
     def open_folder(self) -> dict[str, str]:
         folder = self.output.directory("captures").resolve()
-        completed = subprocess.run(["open", str(folder)], check=False)
+        command = folder_open_command(folder)
+        if command is None:
+            raise OperationError(
+                f"No supported folder opener was discovered for: {folder}"
+            )
+        completed = subprocess.run(command, check=False)
         if completed.returncode:
-            raise OperationError(f"macOS could not open capture folder: {folder}")
+            raise OperationError(f"The operating system could not open: {folder}")
         return {"capture_folder": str(folder)}
 
     def delete_reference(self, reference: str) -> dict[str, Any]:

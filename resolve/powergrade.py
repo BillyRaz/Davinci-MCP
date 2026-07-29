@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .color import ColorService
+from .config import load_config
 from .errors import NotFoundError, ValidationError
 from .models import GradeTemplate
 
@@ -12,7 +13,11 @@ from .models import GradeTemplate
 class PowerGradeCatalog:
     def __init__(self, color: ColorService, catalog_path: str | None = None) -> None:
         self.color = color
-        self.path = Path(catalog_path or "~/.config/davinci-mcp/grades.json").expanduser()
+        self.path = (
+            Path(catalog_path).expanduser()
+            if catalog_path
+            else load_config().preset_directory / "grades.json"
+        )
 
     def _read(self) -> list[GradeTemplate]:
         if not self.path.exists():

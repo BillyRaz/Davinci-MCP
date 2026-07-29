@@ -1,15 +1,15 @@
 """DaVinci Resolve MCP server entry point (stdio transport)."""
 
 import logging
-import os
 
 from mcp.server.fastmcp import FastMCP
 
+from resolve.config import load_config
 from resolve.errors import ResolveError
 from tools.context import Services, register
 
 logging.basicConfig(
-    level=os.getenv("DAVINCI_MCP_LOG_LEVEL", "INFO"),
+    level=load_config().log_level,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 LOGGER = logging.getLogger("davinci-mcp")

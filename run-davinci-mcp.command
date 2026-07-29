@@ -2,7 +2,7 @@
 
 PROJECT_DIR="${0:A:h}"
 PYTHON_PATH="$PROJECT_DIR/.venv/bin/python"
-OUTPUT_ROOT="${DAVINCI_MCP_OUTPUT_DIR:-$PROJECT_DIR/output}"
+OUTPUT_ROOT="${DAVINCI_MCP_OUTPUT_DIR:-$HOME/Library/Application Support/DavinciMCP}"
 LOG_PATH="$OUTPUT_ROOT/logs/davinci-mcp-$(date -u +%Y%m%dT%H%M%SZ).log"
 
 export RESOLVE_SCRIPT_API="/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting"
@@ -15,7 +15,9 @@ mkdir -p \
   "$OUTPUT_ROOT/comparisons" \
   "$OUTPUT_ROOT/validation" \
   "$OUTPUT_ROOT/logs" \
-  "$OUTPUT_ROOT/reports"
+  "$OUTPUT_ROOT/reports" \
+  "$OUTPUT_ROOT/presets" \
+  "$OUTPUT_ROOT/cache"
 
 if [[ ! -x "$PYTHON_PATH" ]]; then
   print -u2 "DaVinci Resolve MCP cannot start: missing $PYTHON_PATH"
@@ -45,4 +47,3 @@ if (( status != 0 )); then
   fi
 fi
 exit "$status"
-

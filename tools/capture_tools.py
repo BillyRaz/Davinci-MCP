@@ -61,11 +61,10 @@ def register(mcp: Any, services: Services) -> None:
 
     @mcp.tool()
     def open_capture_folder() -> dict[str, str]:
-        """Open the generated capture directory in Finder."""
+        """Open the generated capture directory with the platform file manager."""
         return services.captures.open_folder()
 
     @mcp.tool()
     def delete_captured_reference(reference: str) -> dict[str, Any]:
         """Delete one generated artifact and paired capture metadata when present."""
         return services.captures.delete_reference(reference)
-

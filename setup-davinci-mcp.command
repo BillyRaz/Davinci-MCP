@@ -3,7 +3,7 @@
 set -e
 PROJECT_DIR="${0:A:h}"
 PYTHON_312="${DAVINCI_MCP_PYTHON:-$(command -v python3.12)}"
-OUTPUT_ROOT="${DAVINCI_MCP_OUTPUT_DIR:-$PROJECT_DIR/output}"
+OUTPUT_ROOT="${DAVINCI_MCP_OUTPUT_DIR:-$HOME/Library/Application Support/DavinciMCP}"
 
 cd "$PROJECT_DIR"
 
@@ -29,13 +29,16 @@ fi
 
 print "Installing declared development dependencies..."
 "$PROJECT_DIR/.venv/bin/python" -m pip install -e '.[dev]'
+"$PROJECT_DIR/.venv/bin/python" "$PROJECT_DIR/scripts/platform_info.py" --create-config
 
 mkdir -p \
   "$OUTPUT_ROOT/captures" \
   "$OUTPUT_ROOT/comparisons" \
   "$OUTPUT_ROOT/validation" \
   "$OUTPUT_ROOT/logs" \
-  "$OUTPUT_ROOT/reports"
+  "$OUTPUT_ROOT/reports" \
+  "$OUTPUT_ROOT/presets" \
+  "$OUTPUT_ROOT/cache"
 
 export DAVINCI_MCP_OUTPUT_DIR="$OUTPUT_ROOT"
 export RESOLVE_SCRIPT_API="/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting"
@@ -53,4 +56,3 @@ print
 print "Setup complete. Resolve preferences were not changed."
 print "Open DaVinci Resolve with a project and timeline for live validation:"
 print "  \"$PROJECT_DIR/.venv/bin/python\" \"$PROJECT_DIR/scripts/live_validate.py\""
-
