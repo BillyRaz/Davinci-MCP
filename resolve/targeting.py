@@ -276,3 +276,89 @@ class TimelineTargetService:
             self._locked = None
             raise OperationError("Timeline changed during locked-target resolution")
         return item, resolved
+
+    @staticmethod
+    def _graph_context(graph: Any) -> dict[str, Any] | None:
+        if graph is None:
+            return None
+        count = graph.GetNumNodes()
+        return {
+            "count": count,
+            "nodes": [
+                {
+                    "index": index,
+                    "label": graph.GetNodeLabel(index),
+                    "lut": graph.GetLUT(index),
+                    "tools": graph.GetToolsInNode(index) or [],
+                    "cache_mode": graph.GetNodeCacheMode(index),
+                    "enabled": {
+                        "supported": False,
+                        "reason": "The official Graph API has SetNodeEnabled but no getter.",
+                    },
+                    "cdl": {
+                        "supported": False,
+                        "reason": "The official TimelineItem API has SetCDL but no getter.",
+                    },
+                }
+                for index in range(1, count + 1)
+            ],
+        }
+
+    def grade_context(self) -> dict[str, Any]:
+        """Inspect official grade/version/cache/group context without mutation."""
+        item, resolved = self.item()
+        resolve = self.connection.connect()
+        group = item.GetColorGroup()
+        media = item.GetMediaPoolItem()
+        media_properties = media.GetClipProperty() if media else {}
+        track = getattr(item, "GetTrackTypeAndIndex", lambda: None)()
+        current_version = item.GetCurrentVersion()
+        return {
+            "target": resolved["target"],
+            "resolved_item": resolved["resolved_item"],
+            "current_page": resolve.GetCurrentPage(),
+            "current_version": current_version,
+            "grade_mode": (
+                "local"
+                if current_version and current_version.get("versionType") == 0
+                else "remote"
+                if current_version and current_version.get("versionType") == 1
+                else "unknown"
+            ),
+            "local_versions": item.GetVersionNameList(0) or [],
+            "remote_versions": item.GetVersionNameList(1) or [],
+            "clip_color_bypass": {
+                "supported": False,
+                "reason": "No clip color-bypass getter is exposed by the official API.",
+            },
+            "timeline_color_bypass": {
+                "supported": False,
+                "reason": "No timeline color-bypass getter is exposed by the official API.",
+            },
+            "clip_graph": self._graph_context(item.GetNodeGraph()),
+            "color_group": (
+                {
+                    "name": group.GetName(),
+                    "pre_clip_graph": self._graph_context(group.GetPreClipNodeGraph()),
+                    "post_clip_graph": self._graph_context(group.GetPostClipNodeGraph()),
+                }
+                if group
+                else None
+            ),
+            "clip_enabled": item.GetClipEnabled(),
+            "track_type_and_index": track,
+            "color_output_cache": item.GetIsColorOutputCacheEnabled(),
+            "fusion_output_cache": item.GetIsFusionOutputCacheEnabled(),
+            "fusion_composition_count": item.GetFusionCompCount(),
+            "fusion_composition_names": item.GetFusionCompNameList() or [],
+            "media_pool_item_available": media is not None,
+            "source_media_path": media_properties.get("File Path") or None,
+            "media_type": media_properties.get("Type") or None,
+            "compound_or_adjustment_context": {
+                "supported": False,
+                "reason": (
+                    "The official API exposes media properties and Fusion composition count "
+                    "but no authoritative adjustment-clip/compound-clip classification getter."
+                ),
+            },
+        }

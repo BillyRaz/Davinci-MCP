@@ -9,7 +9,10 @@ import pytest
 from resolve.errors import NotFoundError, OperationError, ValidationError
 from resolve.targeting import TimelineTargetService
 from resolve.timeline import TimelineService
-from tools.target_tools import require_observable_change, wait_for_resolve_refresh
+from tools.target_tools import (
+    require_observable_change,
+    wait_for_resolve_refresh,
+)
 
 
 class FakeMedia:
@@ -217,6 +220,16 @@ def test_lock_remains_valid_when_playhead_moves_elsewhere() -> None:
     targets.lock()
     connection.timeline().current = other
     assert targets.resolve()["resolved_item"]["unique_id"] == locked.uid
+
+
+def test_locked_capture_exposes_explicit_custom_frame_without_selection() -> None:
+    source = (Path(__file__).parents[1] / "tools/target_tools.py").read_text()
+    capture_tool = source.split("def capture_locked_target_frame(", 1)[1].split(
+        "@mcp.tool()", 1
+    )[0]
+    assert "custom_frame: int | None" in capture_tool
+    assert "force_gallery: bool" in capture_tool
+    assert "selected_clips" not in capture_tool
 
 
 def test_grade_address_comes_from_lock_not_new_playhead() -> None:

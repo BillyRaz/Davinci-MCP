@@ -52,6 +52,11 @@ def register(mcp: Any, services: Services) -> None:
         return services.targets.resolve()
 
     @mcp.tool()
+    def inspect_locked_target_grade_context() -> dict[str, Any]:
+        """Read official version, graph, group, cache, Fusion, and media context."""
+        return services.targets.grade_context()
+
+    @mcp.tool()
     def clear_locked_timeline_target() -> dict[str, Any]:
         """Explicitly clear the session-local timeline target lock."""
         return services.targets.clear()
@@ -59,9 +64,11 @@ def register(mcp: Any, services: Services) -> None:
     @mcp.tool()
     def capture_locked_target_frame(
         frame_strategy: str = "middle",
+        custom_frame: int | None = None,
         output_name: str | None = None,
         output_format: str = "png",
         overwrite: bool = False,
+        force_gallery: bool = False,
     ) -> dict[str, Any]:
         """Capture the locked item, then prove its identity remained valid."""
         resolved_before = services.targets.resolve()
@@ -70,10 +77,11 @@ def register(mcp: Any, services: Services) -> None:
         result = services.captures.capture_clip(
             identifier,
             frame_strategy,  # type: ignore[arg-type]
-            None,
+            custom_frame,
             output_name,
             output_format,
             overwrite,
+            force_gallery,
         )
         resolved_after = services.targets.resolve()
         if result["clip_unique_id"] != resolved_after["target"]["item_unique_id"]:
