@@ -16,7 +16,7 @@ from resolve.output import OutputPaths
 from resolve.powergrade import PowerGradeCatalog
 from resolve.project import ProjectService
 from resolve.render import RenderService
-from resolve.targeting import TimelineTargetService
+from resolve.targeting import TimelineItemService
 from resolve.timeline import TimelineService
 from resolve.validation import ValidationService
 
@@ -37,7 +37,7 @@ class Services:
     workflows: GradeWorkflow
     captures: CaptureService
     validation: ValidationService
-    targets: TimelineTargetService
+    targets: TimelineItemService
 
     @classmethod
     def build(cls) -> "Services":
@@ -48,7 +48,7 @@ class Services:
         output = OutputPaths()
         captures = CaptureService(connection, output)
         validation = ValidationService(connection, output, captures, grades)
-        targets = TimelineTargetService(connection, timelines)
+        targets = TimelineItemService(connection, timelines)
         return cls(
             connection=connection,
             projects=ProjectService(connection),

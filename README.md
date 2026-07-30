@@ -146,6 +146,30 @@ metrics. A “before” is never claimed unless it was actually captured first.
 Every generated file result includes its absolute path. Metadata includes the
 project, timeline, frame/timecode, timestamp, and actual capture method.
 
+## TimelineItem Locks
+
+The playhead is an acquisition tool only. `lock_timeline_item` (and the compatible
+`lock_timeline_target` name) double-reads the item under the playhead, validates any
+confirmed identity, and stores a session-local `TimelineItemLock`. The stored lock
+contains project, timeline, item unique ID, original track/address and frame range,
+duration, source identity/path, creation time, and connection generation. It does
+not contain the playhead position.
+
+All production capture and grading tools re-resolve the locked item by Resolve
+unique ID before acting and use its currently resolved track/item address. Moving
+the playhead, playing, scrubbing, or switching Resolve pages therefore does not
+invalidate the lock. A project or timeline switch, connection generation change,
+missing or ambiguous item, explicit release, or server restart does.
+
+`queue_timeline_item` supports acquiring multiple independent item identities for
+future batch workflows. `validate_queued_timeline_items` resolves the queue without
+consulting the playhead. Queue entries are session-local and are not persisted.
+
+The official API does not expose timeline-item selection independently of the
+playhead, so initial interactive acquisition still uses the item under it.
+Capture may temporarily move the timeline to export an explicit frame and then
+restore the editor's timecode; this does not change which TimelineItem is locked.
+
 ## Validation
 
 Offline validation checks Python, dependencies, platform discovery, scripting

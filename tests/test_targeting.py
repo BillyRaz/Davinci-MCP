@@ -1,4 +1,4 @@
-"""Safe playhead-target locking tests with Resolve API fakes."""
+"""TimelineItem acquisition and identity-locking tests with Resolve API fakes."""
 
 from __future__ import annotations
 
@@ -187,13 +187,14 @@ def test_timeline_change_invalidates_lock() -> None:
         targets.resolve()
 
 
-def test_track_movement_invalidates_stale_identity() -> None:
+def test_unique_id_survives_track_movement_and_uses_resolved_address() -> None:
     targets, connection = service()
     targets.lock()
     item = connection.timeline().tracks[1].pop()
     connection.timeline().tracks[2] = [item]
-    with pytest.raises(ValidationError, match="identity changed"):
-        targets.resolve()
+    resolved = targets.resolve()
+    assert resolved["resolved_item"]["track_index"] == 2
+    assert resolved["resolution_rule"] == "exact_unique_id"
 
 
 def test_missing_unique_id_uses_strict_composite() -> None:
@@ -223,6 +224,61 @@ def test_lock_remains_valid_when_playhead_moves_elsewhere() -> None:
     assert targets.resolve()["resolved_item"]["unique_id"] == locked.uid
 
 
+def test_lock_forgets_playhead_after_acquisition() -> None:
+    targets, connection = service()
+    target = targets.lock()["target"]
+    assert "playhead_timecode" not in target
+    connection.timeline().timecode = "01:42:17:03"
+    assert targets.resolve()["resolved_item"]["unique_id"] == "item-a"
+
+
+@pytest.mark.parametrize("editor_action", ["playback", "scrub", "page-switch"])
+def test_editor_activity_does_not_invalidate_lock(editor_action: str) -> None:
+    targets, connection = service()
+    targets.lock()
+    if editor_action == "playback":
+        connection.timeline().timecode = "01:00:00:12"
+    elif editor_action == "scrub":
+        connection.timeline().timecode = "01:12:30:04"
+        connection.timeline().current = FakeItem("Elsewhere.mov", "elsewhere", 900, 925)
+    else:
+        connection.page = "edit"
+    assert targets.resolve()["resolved_item"]["unique_id"] == "item-a"
+
+
+def test_removed_timeline_item_invalidates_lock() -> None:
+    targets, connection = service()
+    targets.lock()
+    connection.timeline().tracks[1].clear()
+    with pytest.raises(NotFoundError, match="no longer exists"):
+        targets.resolve()
+
+
+def test_duplicate_unique_id_invalidates_lock() -> None:
+    targets, connection = service()
+    targets.lock()
+    connection.timeline().tracks[1].append(FakeItem("Copy.mov", "item-a", 200, 225))
+    with pytest.raises(ValidationError, match="ambiguous"):
+        targets.resolve()
+
+
+def test_queue_holds_multiple_independent_timeline_items() -> None:
+    targets, connection = service()
+    first = connection.timeline().current
+    second = FakeItem("B.mov", "item-b", 200, 225)
+    connection.timeline().tracks[1].append(second)
+    targets.queue({"unique_id": "item-a"})
+    connection.timeline().current = second
+    targets.queue({"unique_id": "item-b"})
+    connection.timeline().current = first
+    resolved = targets.resolve_queue()
+    assert [item["resolved_item"]["unique_id"] for item in resolved] == [
+        "item-a",
+        "item-b",
+    ]
+    assert targets.clear_queue() == {"cleared": 2}
+
+
 def test_locked_capture_exposes_explicit_custom_frame_without_selection() -> None:
     source = (Path(__file__).parents[1] / "tools/target_tools.py").read_text()
     capture_tool = source.split("def capture_locked_target_frame(", 1)[1].split(
@@ -247,8 +303,9 @@ def test_grade_address_comes_from_lock_not_new_playhead() -> None:
 def test_locked_grade_tool_does_not_use_current_clip_address() -> None:
     source = (Path(__file__).parents[1] / "tools/target_tools.py").read_text()
     locked_tool = source.split("def set_cdl_on_locked_target(", 1)[1]
-    assert 'target["track_index"]' in locked_tool
-    assert 'target["item_index"]' in locked_tool
+    assert 'mutation_address = services.targets.resolve()["resolved_item"]' in locked_tool
+    assert 'mutation_address["track_index"]' in locked_tool
+    assert 'mutation_address["item_index"]' in locked_tool
     assert "current_clip" not in locked_tool
 
 

@@ -1,4 +1,4 @@
-"""Safe playhead inspection and session-local timeline target locking."""
+"""Acquire TimelineItems from the playhead and operate on identity-only locks."""
 
 import hashlib
 import time
@@ -61,8 +61,44 @@ def register(mcp: Any, services: Services) -> None:
     def lock_timeline_target(
         expected_identity: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Double-read and lock the playhead item, optionally validating preconfirmed identity."""
+        """Acquire once from the playhead and create an identity-only TimelineItem lock."""
         return services.targets.lock(expected_identity)
+
+    @mcp.tool()
+    def acquire_timeline_item(
+        expected_identity: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Double-read a playhead item for acquisition without creating a lock."""
+        return services.targets.acquire(expected_identity)
+
+    @mcp.tool()
+    def lock_timeline_item(
+        expected_identity: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Acquire and lock a TimelineItem; later playhead state is ignored."""
+        return services.targets.lock(expected_identity)
+
+    @mcp.tool()
+    def queue_timeline_item(
+        expected_identity: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Acquire the current TimelineItem and append an independent identity lock."""
+        return services.targets.queue(expected_identity)
+
+    @mcp.tool()
+    def list_queued_timeline_items() -> list[dict[str, Any]]:
+        """List session-local queued TimelineItem identities without resolving them."""
+        return services.targets.get_queue()
+
+    @mcp.tool()
+    def validate_queued_timeline_items() -> list[dict[str, Any]]:
+        """Resolve every queued TimelineItem by identity, never by playhead."""
+        return services.targets.resolve_queue()
+
+    @mcp.tool()
+    def release_timeline_item_queue() -> dict[str, Any]:
+        """Release all queued TimelineItem locks."""
+        return services.targets.clear_queue()
 
     @mcp.tool()
     def get_locked_timeline_target() -> dict[str, Any]:
@@ -72,6 +108,11 @@ def register(mcp: Any, services: Services) -> None:
     @mcp.tool()
     def validate_locked_timeline_target() -> dict[str, Any]:
         """Strictly re-resolve the locked item without relying on the current playhead."""
+        return services.targets.resolve()
+
+    @mcp.tool()
+    def resolve_locked_timeline_item() -> dict[str, Any]:
+        """Resolve the TimelineItem lock by unique ID or strict composite fallback."""
         return services.targets.resolve()
 
     @mcp.tool()
@@ -85,6 +126,11 @@ def register(mcp: Any, services: Services) -> None:
         return services.targets.clear()
 
     @mcp.tool()
+    def release_timeline_item() -> dict[str, Any]:
+        """Release the active TimelineItem lock."""
+        return services.targets.clear()
+
+    @mcp.tool()
     def capture_locked_target_frame(
         frame_strategy: str = "middle",
         custom_frame: int | None = None,
@@ -94,6 +140,11 @@ def register(mcp: Any, services: Services) -> None:
         force_gallery: bool = False,
     ) -> dict[str, Any]:
         """Capture the locked item, then prove its identity remained valid."""
+        if frame_strategy == "current":
+            raise OperationError(
+                "Locked TimelineItem capture cannot use the current playhead; "
+                "use first, middle, last, or custom"
+            )
         resolved_before = services.targets.resolve()
         target = resolved_before["target"]
         identifier = target["item_unique_id"] or target["clip_name"]
@@ -137,9 +188,10 @@ def register(mcp: Any, services: Services) -> None:
             False,
             True,
         )
+        mutation_address = services.targets.resolve()["resolved_item"]
         operation = services.colors.apply_drx(
-            target["track_index"],
-            target["item_index"],
+            mutation_address["track_index"],
+            mutation_address["item_index"],
             drx_path,
             grade_mode,
         )
@@ -191,9 +243,10 @@ def register(mcp: Any, services: Services) -> None:
             False,
             True,
         )
+        mutation_address = services.targets.resolve()["resolved_item"]
         operation = services.colors.set_cdl(
-            target["track_index"],
-            target["item_index"],
+            mutation_address["track_index"],
+            mutation_address["item_index"],
             node_index,
             slope,
             offset,
@@ -248,10 +301,11 @@ def register(mcp: Any, services: Services) -> None:
             False,
             True,
         )
+        mutation_address = services.targets.resolve()["resolved_item"]
         operation = services.grades.apply(
             name,
-            target["track_index"],
-            target["item_index"],
+            mutation_address["track_index"],
+            mutation_address["item_index"],
             grade_mode,
         )
         resolved_after = services.targets.resolve()
@@ -267,9 +321,11 @@ def register(mcp: Any, services: Services) -> None:
         )
 
         def restore() -> str:
+            restore_resolution = services.targets.resolve()
+            restore_address = restore_resolution["resolved_item"]
             services.colors.apply_drx(
-                target["track_index"],
-                target["item_index"],
+                restore_address["track_index"],
+                restore_address["item_index"],
                 backup_drx_path,
                 0,
             )
@@ -290,8 +346,9 @@ def register(mcp: Any, services: Services) -> None:
         before_hash, after_hash = require_visible_change_or_restore(
             before["image_path"], after["image_path"], restore
         )
+        inspection_address = services.targets.resolve()["resolved_item"]
         node_count = services.nodes.inspect(
-            target["track_index"], target["item_index"]
+            inspection_address["track_index"], inspection_address["item_index"]
         )["count"]
         if (
             template["expected_node_count"] is not None

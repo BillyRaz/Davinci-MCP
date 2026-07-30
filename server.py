@@ -22,7 +22,8 @@ def create_server(services: Services | None = None) -> FastMCP:
         instructions=(
             "Inspect and control DaVinci Resolve Studio using only Blackmagic's official "
             "scripting API. Timeline clips use 1-based track_index and item_index addresses. "
-            "Call connect_to_resolve first and inspect before mutating."
+            "Call connect_to_resolve first and inspect before mutating. The playhead is used "
+            "only to acquire a TimelineItem; production operations resolve its identity lock."
         ),
     )
     register(mcp, services or Services.build())

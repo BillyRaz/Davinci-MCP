@@ -12,7 +12,7 @@ from .timeline import TimelineService
 
 
 @dataclass(frozen=True, slots=True)
-class TimelineTarget:
+class TimelineItemLock:
     project_name: str
     project_unique_id: str | None
     timeline_name: str
@@ -25,7 +25,6 @@ class TimelineTarget:
     start_frame: int
     end_frame: int
     duration: int
-    playhead_timecode: str
     media_pool_id: str | None
     source_media_path: str | None
     locked_at: str
@@ -35,20 +34,26 @@ class TimelineTarget:
         return asdict(self)
 
 
-class TimelineTargetService:
-    """Lock one timeline item by identity and re-resolve it before every use."""
+class TimelineItemService:
+    """Acquire once from the playhead, then operate only on TimelineItem identity."""
 
     def __init__(
         self, connection: ResolveConnection, timelines: TimelineService | None = None
     ) -> None:
         self.connection = connection
         self.timelines = timelines or TimelineService(connection)
-        self._locked: TimelineTarget | None = None
+        self._locked: TimelineItemLock | None = None
+        self._queue: list[TimelineItemLock] = []
 
     def clear(self) -> dict[str, Any]:
         had_target = self._locked is not None
         self._locked = None
         return {"cleared": had_target}
+
+    def clear_queue(self) -> dict[str, Any]:
+        count = len(self._queue)
+        self._queue.clear()
+        return {"cleared": count}
 
     def _generation(self) -> int:
         return int(getattr(self.connection, "generation", 0))
@@ -135,33 +140,55 @@ class TimelineTargetService:
         if conflicts:
             raise ValidationError(f"Preconfirmed target identity conflicts: {conflicts}")
 
-    def lock(self, expected: dict[str, Any] | None = None) -> dict[str, Any]:
+    def acquire(self, expected: dict[str, Any] | None = None) -> dict[str, Any]:
         first = self.inspect_playhead()
         second = self.inspect_playhead()
         if not self._stable(first, second):
-            self._locked = None
             raise ValidationError(
-                "Playhead target was unstable across two independent reads; lock refused"
+                "TimelineItem acquisition was unstable across two independent reads"
             )
         if expected:
             self._validate_expected(second, expected)
-        target = TimelineTarget(
-            **second,
+        return {"status": "acquired", "item": second}
+
+    def _make_lock(self, acquired: dict[str, Any]) -> TimelineItemLock:
+        identity = {key: value for key, value in acquired.items() if key != "playhead_timecode"}
+        return TimelineItemLock(
+            **identity,
             locked_at=datetime.now(UTC).isoformat(),
             connection_generation=self._generation(),
         )
+
+    def lock(self, expected: dict[str, Any] | None = None) -> dict[str, Any]:
+        acquired = self.acquire(expected)["item"]
+        target = self._make_lock(acquired)
         self._locked = target
         return {"status": "locked", "target": target.to_dict()}
+
+    def queue(self, expected: dict[str, Any] | None = None) -> dict[str, Any]:
+        acquired = self.acquire(expected)["item"]
+        target = self._make_lock(acquired)
+        if any(
+            item.project_unique_id == target.project_unique_id
+            and item.timeline_unique_id == target.timeline_unique_id
+            and item.item_unique_id == target.item_unique_id
+            for item in self._queue
+        ):
+            raise ValidationError("TimelineItem is already queued")
+        self._queue.append(target)
+        return {"status": "queued", "position": len(self._queue), "target": target.to_dict()}
+
+    def get_queue(self) -> list[dict[str, Any]]:
+        return [target.to_dict() for target in self._queue]
 
     def get(self) -> dict[str, Any]:
         if self._locked is None:
             raise NotFoundError("No timeline target is locked in this MCP session")
         return self._locked.to_dict()
 
-    def _assert_context(self, target: TimelineTarget) -> None:
+    def _assert_context(self, target: TimelineItemLock) -> None:
         context = self._context()
         if self._generation() != target.connection_generation:
-            self._locked = None
             raise ValidationError("Resolve connection changed; locked target was invalidated")
         if (
             context["project_name"] != target.project_name
@@ -170,7 +197,6 @@ class TimelineTargetService:
                 and context["project_unique_id"] != target.project_unique_id
             )
         ):
-            self._locked = None
             raise ValidationError("Active project changed; locked target was invalidated")
         if (
             context["timeline_name"] != target.timeline_name
@@ -179,7 +205,6 @@ class TimelineTargetService:
                 and context["timeline_unique_id"] != target.timeline_unique_id
             )
         ):
-            self._locked = None
             raise ValidationError("Active timeline changed; locked target was invalidated")
 
     @staticmethod
@@ -190,53 +215,46 @@ class TimelineTargetService:
             )
         return candidates[0] if candidates else None
 
-    def resolve(self) -> dict[str, Any]:
-        if self._locked is None:
-            raise NotFoundError("No timeline target is locked in this MCP session")
-        target = self._locked
-        try:
-            self._assert_context(target)
-            clips = self.timelines.clips()
-            match = None
-            resolution_rule = ""
-            if target.item_unique_id:
-                match = self._unique(
-                    [
-                        clip
-                        for clip in clips
-                        if clip["unique_id"] == target.item_unique_id
-                    ],
-                    "exact unique ID",
-                )
-                resolution_rule = "exact_unique_id"
-            if match is None:
-                match = self._unique(
-                    [
-                        clip
-                        for clip in clips
-                        if clip["track_index"] == target.track_index
-                        and clip["start"] == target.start_frame
-                        and clip["end"] == target.end_frame
-                        and clip["name"] == target.clip_name
-                    ],
-                    "track/start/end/name composite",
-                )
-                resolution_rule = "track_start_end_name"
-            if match is None:
-                match = self._unique(
-                    [
-                        clip
-                        for clip in clips
-                        if clip["track_index"] == target.track_index
-                        and clip["item_index"] == target.item_index
-                        and clip["duration"] == target.duration
-                        and clip["name"] == target.clip_name
-                    ],
-                    "track/item/duration/name composite",
-                )
-                resolution_rule = "track_item_duration_name"
-            if match is None:
-                raise NotFoundError("Locked timeline target is stale or no longer exists")
+    def _resolve_lock(self, target: TimelineItemLock) -> dict[str, Any]:
+        self._assert_context(target)
+        clips = self.timelines.clips()
+        match = None
+        resolution_rule = ""
+        if target.item_unique_id:
+            match = self._unique(
+                [clip for clip in clips if clip["unique_id"] == target.item_unique_id],
+                "exact unique ID",
+            )
+            resolution_rule = "exact_unique_id"
+        if match is None:
+            match = self._unique(
+                [
+                    clip
+                    for clip in clips
+                    if clip["track_index"] == target.track_index
+                    and clip["start"] == target.start_frame
+                    and clip["end"] == target.end_frame
+                    and clip["name"] == target.clip_name
+                ],
+                "track/start/end/name composite",
+            )
+            resolution_rule = "track_start_end_name"
+        if match is None:
+            match = self._unique(
+                [
+                    clip
+                    for clip in clips
+                    if clip["track_index"] == target.track_index
+                    and clip["item_index"] == target.item_index
+                    and clip["duration"] == target.duration
+                    and clip["name"] == target.clip_name
+                ],
+                "track/item/duration/name composite",
+            )
+            resolution_rule = "track_item_duration_name"
+        if match is None:
+            raise NotFoundError("Locked TimelineItem is stale or no longer exists")
+        if not target.item_unique_id:
             strict_fields = {
                 "clip_name": match["name"],
                 "track_index": match["track_index"],
@@ -255,18 +273,28 @@ class TimelineTargetService:
             }
             if strict_fields != expected_fields:
                 raise ValidationError(
-                    "Locked target identity changed after editing or track movement; "
+                    "Locked TimelineItem composite identity changed; "
                     f"expected {expected_fields}, resolved {strict_fields}"
                 )
-            return {
-                "status": "valid",
-                "resolution_rule": resolution_rule,
-                "target": target.to_dict(),
-                "resolved_item": match,
-            }
+        return {
+            "status": "valid",
+            "resolution_rule": resolution_rule,
+            "target": target.to_dict(),
+            "resolved_item": match,
+        }
+
+    def resolve(self) -> dict[str, Any]:
+        if self._locked is None:
+            raise NotFoundError("No timeline target is locked in this MCP session")
+        target = self._locked
+        try:
+            return self._resolve_lock(target)
         except Exception:
             self._locked = None
             raise
+
+    def resolve_queue(self) -> list[dict[str, Any]]:
+        return [self._resolve_lock(target) for target in self._queue]
 
     def item(self) -> tuple[Any, dict[str, Any]]:
         resolved = self.resolve()
@@ -362,3 +390,8 @@ class TimelineTargetService:
                 ),
             },
         }
+
+
+# Backward-compatible names for integrations built before TimelineItem terminology.
+TimelineTarget = TimelineItemLock
+TimelineTargetService = TimelineItemService
