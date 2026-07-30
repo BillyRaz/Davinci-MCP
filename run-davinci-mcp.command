@@ -37,13 +37,13 @@ print -u2 "Log: $LOG_PATH"
 print -u2 "Resolve must be open with local External scripting enabled for live tools."
 
 "$PYTHON_PATH" "$PROJECT_DIR/server.py" 2> >(tee -a "$LOG_PATH" >&2)
-status=$?
+exit_status=$?
 
-if (( status != 0 )); then
-  print -u2 "DaVinci Resolve MCP exited with status $status. See: $LOG_PATH"
+if (( exit_status != 0 )); then
+  print -u2 "DaVinci Resolve MCP exited with status $exit_status. See: $LOG_PATH"
   if [[ -t 0 ]]; then
     print -u2 "Press any key to close this window."
     read -k 1
   fi
 fi
-exit "$status"
+exit "$exit_status"

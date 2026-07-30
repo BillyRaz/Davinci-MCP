@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -201,10 +205,49 @@ def test_launcher_path_quoting_and_missing_venv_message() -> None:
     setup_script = (project / "setup-davinci-mcp.command").read_text()
     assert 'PROJECT_DIR="${0:A:h}"' in run_script
     assert '"$PYTHON_PATH" "$PROJECT_DIR/server.py"' in run_script
+    assert re.search(r"(?m)^\s*status=", run_script) is None
+    assert "exit_status=$?" in run_script
+    assert 'exit "$exit_status"' in run_script
     assert "missing $PYTHON_PATH" in run_script
     assert '"$PROJECT_DIR/.venv/bin/python" -m pip install -e \'.[dev]\'' in setup_script
     assert "/Applications/DaVinci Resolve/davinci-mcp" not in run_script
     assert "/Applications/DaVinci Resolve/davinci-mcp" not in setup_script
+
+
+def test_macos_launcher_and_desktop_forwarder_preserve_child_exit_code(
+    tmp_path: Path,
+) -> None:
+    source = Path(__file__).parents[1] / "run-davinci-mcp.command"
+    project = tmp_path / "DaVinci MCP project"
+    python = project / ".venv/bin/python"
+    project.mkdir()
+    (project / "server.py").write_text("")
+    shutil.copy2(source, project / source.name)
+    python.parent.mkdir(parents=True)
+    python.write_text("#!/bin/zsh\nexit 23\n")
+    python.chmod(0o755)
+
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    forwarder = desktop / "Run DaVinci MCP.command"
+    forwarder.write_text(f'#!/bin/zsh\n\nexec "{project / source.name}"\n')
+    forwarder.chmod(0o755)
+
+    env = os.environ.copy()
+    env["DAVINCI_MCP_OUTPUT_DIR"] = str(tmp_path / "Output With Spaces")
+    result = subprocess.run(
+        ["/bin/zsh", str(forwarder)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 23
+    assert f"Server: {project}/server.py" in result.stderr
+    assert f"Python: {python}" in result.stderr
+    assert "read-only variable" not in result.stderr
+    assert list((tmp_path / "Output With Spaces/logs").glob("davinci-mcp-*.log"))
 
 
 def test_readme_uses_user_owned_macos_clone_path() -> None:
