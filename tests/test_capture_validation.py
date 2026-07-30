@@ -203,6 +203,14 @@ def test_launcher_path_quoting_and_missing_venv_message() -> None:
     assert '"$PYTHON_PATH" "$PROJECT_DIR/server.py"' in run_script
     assert "missing $PYTHON_PATH" in run_script
     assert '"$PROJECT_DIR/.venv/bin/python" -m pip install -e \'.[dev]\'' in setup_script
+    assert "/Applications/DaVinci Resolve/davinci-mcp" not in run_script
+    assert "/Applications/DaVinci Resolve/davinci-mcp" not in setup_script
+
+
+def test_readme_uses_user_owned_macos_clone_path() -> None:
+    readme = (Path(__file__).parents[1] / "README.md").read_text()
+    assert 'cd "$HOME/Developer"' in readme
+    assert "/Users/YOUR_NAME/Developer/Davinci-MCP/.venv/bin/python" in readme
 
 
 def test_missing_resolve_connection_behavior(tmp_path: Path) -> None:

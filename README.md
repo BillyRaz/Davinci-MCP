@@ -79,10 +79,13 @@ Windows troubleshooting:
 
 ## macOS Installation
 
-Existing macOS users can continue using:
+Clone into a user-owned development directory, then use the portable launchers:
 
 ```zsh
-cd "/Applications/DaVinci Resolve/davinci-mcp"
+mkdir -p "$HOME/Developer"
+cd "$HOME/Developer"
+git clone https://github.com/BillyRaz/Davinci-MCP.git
+cd Davinci-MCP
 ./setup-davinci-mcp.command
 ./run-davinci-mcp.command
 ```
@@ -103,8 +106,8 @@ export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$RESOLVE_SCRIPT_API/Modules"
 {
   "mcpServers": {
     "davinci-resolve": {
-      "command": "/Applications/DaVinci Resolve/davinci-mcp/.venv/bin/python",
-      "args": ["/Applications/DaVinci Resolve/davinci-mcp/server.py"]
+      "command": "/Users/YOUR_NAME/Developer/Davinci-MCP/.venv/bin/python",
+      "args": ["/Users/YOUR_NAME/Developer/Davinci-MCP/server.py"]
     }
   }
 }
