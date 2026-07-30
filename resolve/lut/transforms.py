@@ -42,7 +42,14 @@ def temperature_tint(rgb: RGB, temperature: float, tint: float) -> RGB:
 
 
 def contrast_pivot(rgb: RGB, contrast: float, pivot: float) -> RGB:
-    return tuple(pivot + (value - pivot) * contrast for value in rgb)  # type: ignore[return-value]
+    def curve(value: float) -> float:
+        if value <= 0.0 or value >= 1.0:
+            return value
+        if value <= pivot:
+            return pivot * (value / pivot) ** contrast
+        return 1.0 - (1.0 - pivot) * ((1.0 - value) / (1.0 - pivot)) ** contrast
+
+    return tuple(curve(value) for value in rgb)  # type: ignore[return-value]
 
 
 def toe(value: float, strength: float) -> float:
@@ -97,9 +104,12 @@ def hue_sectors(
     hue, sat, val = colorsys.rgb_to_hsv(*bounded)
     if sat < 1e-9:
         return rgb
-    teal = hue_weight(hue, 0.50) * teal_preservation
-    magenta = hue_weight(hue, 5.0 / 6.0) * magenta_preservation
-    gold = hue_weight(hue, 1.0 / 8.0) * gold_warmth
+    chroma_weight = min(1.0, sat / 0.25) ** 2
+    teal = hue_weight(hue, 0.50) * teal_preservation * chroma_weight
+    magenta = (
+        hue_weight(hue, 5.0 / 6.0) * magenta_preservation * chroma_weight
+    )
+    gold = hue_weight(hue, 1.0 / 8.0) * gold_warmth * chroma_weight
     preserved_sat = sat * (1.0 + teal + magenta)
     adjusted = colorsys.hsv_to_rgb(hue, min(1.0, preserved_sat), val)
     return (
@@ -112,10 +122,16 @@ def hue_sectors(
 def gamut_compress(rgb: RGB, strength: float) -> RGB:
     if strength == 0.0:
         return rgb
-    luminance = luma(rgb)
-    excursion = max(max(rgb) - 1.0, -min(rgb), 0.0)
-    factor = 1.0 / (1.0 + strength * excursion * 4.0)
-    return tuple(luminance + (value - luminance) * factor for value in rgb)  # type: ignore[return-value]
+
+    def compress(value: float) -> float:
+        if value > 1.0:
+            excursion = value - 1.0
+            return 1.0 + excursion / (1.0 + strength * excursion * 4.0)
+        if value < 0.0:
+            return value / (1.0 + strength * abs(value) * 4.0)
+        return value
+
+    return tuple(compress(value) for value in rgb)  # type: ignore[return-value]
 
 
 def apply_profile(encoded_rgb: RGB, profile: GradeProfile) -> RGB:

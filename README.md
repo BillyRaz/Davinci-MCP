@@ -38,6 +38,9 @@ is read-only and should only be used with Resolve Studio open. Resolve Free
 external scripting limitations are reported as warnings/unsupported capability,
 not MCP defects.
 
+The parameterized global color-treatment LUT engine is documented in
+[docs/LUT_ENGINE.md](docs/LUT_ENGINE.md).
+
 To create an optional Desktop shortcut:
 
 ```powershell

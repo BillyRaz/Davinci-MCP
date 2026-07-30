@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from resolve.lut.analysis import analyze_lut as analyze_lut_file
+from resolve.lut.analysis import compare_captures
 from resolve.lut.generator import generate_artifacts
 from resolve.lut.model import GradeProfile
 from resolve.lut.validator import validate_lut as validate_lut_file
@@ -62,6 +64,31 @@ def register(mcp: Any, services: Services) -> None:
         return services.lut_registry.register(
             Path(cube_path).expanduser().resolve(),
             Path(metadata_path).expanduser().resolve(),
+        )
+
+    @mcp.tool()
+    def analyze_lut(cube_path: str) -> dict[str, Any]:
+        """Run technical ramp/sample analysis; this is not an artistic score."""
+        return analyze_lut_file(Path(cube_path).expanduser().resolve())
+
+    @mcp.tool()
+    def compare_grade_captures(
+        before_path: str, after_path: str
+    ) -> dict[str, Any]:
+        """Measure bounded technical differences between two exported captures."""
+        return compare_captures(
+            Path(before_path).expanduser().resolve(),
+            Path(after_path).expanduser().resolve(),
+        )
+
+    @mcp.tool()
+    def validate_applied_lut(
+        before_path: str, after_path: str
+    ) -> dict[str, Any]:
+        """Reject a visible no-op and report warnings for an applied LUT."""
+        return compare_captures(
+            Path(before_path).expanduser().resolve(),
+            Path(after_path).expanduser().resolve(),
         )
 
     @mcp.tool()

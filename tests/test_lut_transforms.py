@@ -49,6 +49,13 @@ def test_contrast_pivot_and_monotonic_toe_shoulder() -> None:
     assert contrast_pivot((0.2, 0.5, 0.8), 1, 0.4) == pytest.approx(
         (0.2, 0.5, 0.8)
     )
+    contrast_ramp = [
+        contrast_pivot((index / 1000,) * 3, 1.2, 0.42)[0]
+        for index in range(1001)
+    ]
+    assert contrast_ramp[0] == 0
+    assert contrast_ramp[-1] == 1
+    assert all(left <= right for left, right in pairwise(contrast_ramp))
     ramp = [index / 1000 for index in range(1001)]
     for transform in (toe, shoulder):
         output = [transform(value, 0.2) for value in ramp]

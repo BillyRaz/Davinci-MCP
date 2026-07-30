@@ -9,10 +9,16 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from resolve.connection import ResolveConnection
 from resolve.errors import ResolveError
+from resolve.output import OutputPaths
+from resolve.platforms import detect_platform
 
+from .analysis import analyze_lut, compare_captures
 from .generator import generate_artifacts
+from .installer import LutInstaller, resolve_lut_root
 from .model import GradeProfile
+from .registry import LutRegistry
 from .validator import validate_lut
 
 
@@ -38,6 +44,18 @@ def build_parser() -> argparse.ArgumentParser:
         command = commands.add_parser(name)
         command.add_argument("cube", type=Path)
         command.add_argument("--metadata", type=Path)
+    analyze = commands.add_parser("analyze")
+    analyze.add_argument("cube", type=Path)
+    compare = commands.add_parser("compare")
+    compare.add_argument("before", type=Path)
+    compare.add_argument("after", type=Path)
+    register = commands.add_parser("register")
+    register.add_argument("cube", type=Path)
+    register.add_argument("--metadata", type=Path, required=True)
+    commands.add_parser("list")
+    install = commands.add_parser("install")
+    install.add_argument("profile_name")
+    install.add_argument("--dry-run", action="store_true")
     return parser
 
 
@@ -57,11 +75,38 @@ def main(argv: list[str] | None = None) -> int:
                 result = generate_artifacts(
                     profile, args.output, source_profile_path=str(args.profile.resolve())
                 )
-        else:
+        elif args.command in {"validate", "inspect"}:
             result = validate_lut(args.cube, args.metadata).to_dict()
             if not result["valid"]:
                 _emit(result, args.json)
                 return 2
+        elif args.command == "analyze":
+            result = analyze_lut(args.cube)
+        elif args.command == "compare":
+            result = compare_captures(args.before, args.after)
+        else:
+            output = OutputPaths()
+            registry = LutRegistry(output.directory("presets") / "luts.json")
+            if args.command == "register":
+                result = registry.register(args.cube, args.metadata)
+            elif args.command == "list":
+                result = {"luts": registry.list()}
+            else:
+                entry = registry.get(args.profile_name)
+                paths = detect_platform()
+                installer = LutInstaller(
+                    resolve_lut_root(
+                        paths.info.system, paths.info.home_directory
+                    )
+                )
+                result = installer.install(
+                    Path(entry.file_path), entry.sha256, dry_run=args.dry_run
+                )
+                if not args.dry_run:
+                    result.update(installer.refresh(ResolveConnection().project()))
+                    registry.set_installed_path(
+                        args.profile_name, result["resolve_path"]
+                    )
         _emit(result, args.json)
         return 0
     except (OSError, ValueError, ValidationError, ResolveError) as exc:
