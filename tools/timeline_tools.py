@@ -35,7 +35,7 @@ def register(mcp: Any, services: Services) -> None:
 
     @mcp.tool()
     def current_clip() -> dict[str, Any]:
-        """Return the current video timeline item under the playhead."""
+        """Return the video timeline item under the playhead; not timeline selection."""
         return services.clips.current()
 
     @mcp.tool()

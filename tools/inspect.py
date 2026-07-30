@@ -24,7 +24,7 @@ def register(mcp: Any, services: Services) -> None:
 
     @mcp.tool()
     def inspect_clip() -> dict[str, Any]:
-        """Inspect the current clip's metadata; image-scope analysis is not API-accessible."""
+        """Inspect the item under the timeline playhead; this is not timeline selection."""
         metadata = services.clips.current()
         metadata["analysis_availability"] = (
             "Resolve metadata is available. Numerical scopes/exposure/noise/skin analysis "
@@ -44,5 +44,5 @@ def register(mcp: Any, services: Services) -> None:
 
     @mcp.tool()
     def selected_clips() -> list[dict[str, Any]]:
-        """Return selected Media Pool clips (timeline multi-selection is not API-exposed)."""
+        """Return Media Pool selection only; timeline-item selection is not API-exposed."""
         return services.clips.selected()

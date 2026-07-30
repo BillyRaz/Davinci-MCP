@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from resolve.capture import CaptureService
+from resolve.capture import CaptureService, wait_for_viewer_refresh
 from resolve.connection import resolve_module_path
 from resolve.errors import CapabilityError, OperationError
 from resolve.output import OUTPUT_SUBDIRECTORIES, OutputPaths, safe_filename
@@ -165,6 +165,39 @@ def test_gallery_capture_fallback_and_cleanup(tmp_path: Path) -> None:
     assert album.deleted is True
 
 
+def test_force_gallery_bypasses_direct_export(tmp_path: Path) -> None:
+    class Album:
+        def ExportStills(
+            self, stills: list[object], folder: str, prefix: str, fmt: str
+        ) -> bool:
+            Path(folder, f"{prefix}.{fmt}").write_bytes(b"fresh-gallery-export")
+            return bool(stills)
+
+        def DeleteStills(self, stills: list[object]) -> bool:
+            return bool(stills)
+
+    album = Album()
+
+    class Gallery:
+        def GetCurrentStillAlbum(self) -> Album:
+            return album
+
+    class Timeline(FakeTimeline):
+        def GrabStill(self) -> object:
+            return object()
+
+    class Project(FakeProject):
+        def GetGallery(self) -> Gallery:
+            return Gallery()
+
+    connection = FakeConnection(Project(b"stale-direct-export"))
+    connection.timeline_value = Timeline()
+    capture = CaptureService(connection, OutputPaths(tmp_path))  # type: ignore[arg-type]
+    result = capture.capture_current("forced-gallery", force_gallery=True)
+    assert Path(result["image_path"]).read_bytes() == b"fresh-gallery-export"
+    assert result["capture_method"].startswith("Timeline.GrabStill")
+
+
 def test_temporary_render_cleanup() -> None:
     class Project:
         deleted: str | None = None
@@ -177,6 +210,15 @@ def test_temporary_render_cleanup() -> None:
     assert CaptureService.cleanup_temporary_render(project, "job-1") is True
     assert project.deleted == "job-1"
     assert CaptureService.cleanup_temporary_render(project, None) is True
+
+
+def test_capture_waits_for_viewer_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    waited = []
+    monkeypatch.setattr("resolve.capture.time.sleep", waited.append)
+    wait_for_viewer_refresh()
+    assert waited == [0.5]
+    with pytest.raises(ValueError):
+        wait_for_viewer_refresh(6)
 
 
 def test_validation_report_generation(tmp_path: Path) -> None:

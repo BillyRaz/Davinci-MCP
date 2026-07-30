@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -17,6 +18,13 @@ from .timeline import TimelineService
 
 ImageFormat = Literal["png", "jpg"]
 FrameStrategy = Literal["current", "first", "middle", "last", "custom"]
+
+
+def wait_for_viewer_refresh(seconds: float = 0.5) -> None:
+    """Allow Resolve to refresh the viewer after a scripted playhead move."""
+    if not 0.1 <= seconds <= 5.0:
+        raise ValueError("Viewer refresh wait must be between 0.1 and 5 seconds")
+    time.sleep(seconds)
 
 
 def timecode_to_frame(timecode: str, fps: float) -> int:
@@ -144,6 +152,7 @@ class CaptureService:
         output_format: str = "png",
         include_metadata: bool = True,
         overwrite: bool = False,
+        force_gallery: bool = False,
     ) -> dict[str, Any]:
         fmt = self._format(output_format)
         image_path, metadata_path = self._artifact_paths(output_name, fmt, overwrite)
@@ -152,7 +161,7 @@ class CaptureService:
         context = self._context()
         captured_at = datetime.now(UTC).isoformat()
         capture_method = "Project.ExportCurrentFrameAsStill"
-        if callable(exporter):
+        if callable(exporter) and not force_gallery:
             if not exporter(str(image_path)):
                 raise OperationError("Resolve rejected ExportCurrentFrameAsStill")
         else:
@@ -248,6 +257,7 @@ class CaptureService:
         output_name: str | None = None,
         output_format: str = "png",
         overwrite: bool = False,
+        force_gallery: bool = False,
     ) -> dict[str, Any]:
         clip = self._find_clip(clip_identifier)
         timeline = self.connection.timeline()
@@ -283,12 +293,15 @@ class CaptureService:
         )
         if timecode != original_timecode and not timeline.SetCurrentTimecode(timecode):
             raise OperationError(f"Resolve could not move the playhead to {timecode}")
+        if timecode != original_timecode:
+            wait_for_viewer_refresh()
         try:
             result = self.capture_current(
                 output_name or f"{clip['name']}-{frame_strategy}-{timestamp_slug()}",
                 output_format,
                 True,
                 overwrite,
+                force_gallery,
             )
             result.update(
                 {

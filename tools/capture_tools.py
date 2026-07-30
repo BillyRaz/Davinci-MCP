@@ -12,10 +12,11 @@ def register(mcp: Any, services: Services) -> None:
         output_format: str = "png",
         include_metadata: bool = True,
         overwrite: bool = False,
+        force_gallery: bool = False,
     ) -> dict[str, Any]:
         """Export the current Resolve timeline frame and matching JSON metadata."""
         return services.captures.capture_current(
-            output_name, output_format, include_metadata, overwrite
+            output_name, output_format, include_metadata, overwrite, force_gallery
         )
 
     @mcp.tool()
@@ -26,6 +27,7 @@ def register(mcp: Any, services: Services) -> None:
         output_name: str | None = None,
         output_format: str = "png",
         overwrite: bool = False,
+        force_gallery: bool = False,
     ) -> dict[str, Any]:
         """Export a frame from an explicit clip, restoring the original playhead afterward."""
         return services.captures.capture_clip(
@@ -35,6 +37,7 @@ def register(mcp: Any, services: Services) -> None:
             output_name,
             output_format,
             overwrite,
+            force_gallery,
         )
 
     @mcp.tool()

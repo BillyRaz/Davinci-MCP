@@ -36,6 +36,7 @@ class ResolveConnection:
         self.native_library = config.script_library_path
         self._resolve: Any = None
         self._lock = threading.RLock()
+        self.generation = 0
 
     def connect(self, force: bool = False) -> Any:
         with self._lock:
@@ -59,6 +60,7 @@ class ResolveConnection:
                     "and Preferences > System > General > External scripting is enabled."
                 )
             self._resolve = resolve
+            self.generation += 1
             return resolve
 
     def project_manager(self) -> Any:
