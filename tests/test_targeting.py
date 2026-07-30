@@ -11,6 +11,7 @@ from resolve.targeting import TimelineTargetService
 from resolve.timeline import TimelineService
 from tools.target_tools import (
     require_observable_change,
+    require_visible_change_or_restore,
     wait_for_resolve_refresh,
 )
 
@@ -287,6 +288,24 @@ def test_grade_capture_waits_for_resolve_refresh(
     assert waited == [1.0]
     with pytest.raises(ValueError):
         wait_for_resolve_refresh(0)
+
+
+def test_template_noop_restores_backup(tmp_path: Path) -> None:
+    before = tmp_path / "before.png"
+    after = tmp_path / "after.png"
+    restored = tmp_path / "restored.png"
+    before.write_bytes(b"original")
+    after.write_bytes(b"original")
+    called = []
+
+    def restore() -> str:
+        called.append(True)
+        restored.write_bytes(b"original")
+        return str(restored)
+
+    with pytest.raises(OperationError, match="restored successfully"):
+        require_visible_change_or_restore(str(before), str(after), restore)
+    assert called == [True]
 
 
 def test_explicit_clear_and_server_restart_state() -> None:

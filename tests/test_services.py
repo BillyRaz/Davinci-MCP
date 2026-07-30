@@ -1,5 +1,6 @@
 """Unit tests for API boundaries without a running Resolve process."""
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -74,6 +75,10 @@ def test_catalog_round_trip(tmp_path: Path) -> None:
     catalog = PowerGradeCatalog(FakeColor(), str(tmp_path / "catalog.json"))  # type: ignore[arg-type]
     catalog.register(GradeTemplate(name="cinematic", drx_path=str(drx), favorite=True))
     assert catalog.search("cinema")[0]["favorite"] is True
+    assert catalog.search("cinema")[0]["sha256"] == hashlib.sha256(
+        drx.read_bytes()
+    ).hexdigest()
+    assert catalog.validate("cinematic")["hash_valid"] is True
     assert catalog.apply("cinematic", 1, 1)["ok"] is True
 
 
@@ -81,6 +86,23 @@ def test_catalog_rejects_missing_drx(tmp_path: Path) -> None:
     catalog = PowerGradeCatalog(FakeColor(), str(tmp_path / "catalog.json"))  # type: ignore[arg-type]
     with pytest.raises(ValidationError):
         catalog.register(GradeTemplate(name="bad", drx_path=str(tmp_path / "no.drx")))
+
+
+def test_catalog_rejects_tampered_registered_drx(tmp_path: Path) -> None:
+    drx = tmp_path / "look.drx"
+    drx.write_text("first")
+    catalog = PowerGradeCatalog(FakeColor(), str(tmp_path / "catalog.json"))  # type: ignore[arg-type]
+    catalog.register(
+        GradeTemplate(
+            name="locked-look",
+            drx_path=str(drx),
+            compatible_resolve_version="21.0",
+            expected_node_count=5,
+        )
+    )
+    drx.write_text("tampered")
+    with pytest.raises(ValidationError, match="hash changed"):
+        catalog.validate("locked-look", "21.0.2.4")
 
 
 def test_marker_validation() -> None:

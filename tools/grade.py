@@ -37,6 +37,8 @@ def register(mcp: Any, services: Services) -> None:
         description: str = "",
         category: str = "custom",
         favorite: bool = False,
+        compatible_resolve_version: str | None = None,
+        expected_node_count: int | None = None,
     ) -> dict[str, Any]:
         """Register or replace a named DRX template in the local grade catalog."""
         return services.grades.register(
@@ -46,8 +48,42 @@ def register(mcp: Any, services: Services) -> None:
                 description=description,
                 category=category,
                 favorite=favorite,
+                compatible_resolve_version=compatible_resolve_version,
+                expected_node_count=expected_node_count,
             )
         )
+
+    @mcp.tool()
+    def register_grade_template(
+        name: str,
+        drx_path: str,
+        description: str = "",
+        category: str = "custom",
+        compatible_resolve_version: str | None = None,
+        expected_node_count: int | None = None,
+    ) -> dict[str, Any]:
+        """Register a user-authored DRX with integrity and compatibility metadata."""
+        return services.grades.register(
+            GradeTemplate(
+                name=name,
+                drx_path=drx_path,
+                description=description,
+                category=category,
+                compatible_resolve_version=compatible_resolve_version,
+                expected_node_count=expected_node_count,
+            )
+        )
+
+    @mcp.tool()
+    def list_grade_templates() -> list[dict[str, Any]]:
+        """List registered DRX templates and their validation metadata."""
+        return services.grades.search()
+
+    @mcp.tool()
+    def validate_grade_template(name: str) -> dict[str, Any]:
+        """Verify a registered DRX file hash and live Resolve compatibility."""
+        version = services.connection.status()["version"]
+        return services.grades.validate(name, version)
 
     @mcp.tool()
     def search_powergrades(

@@ -2,6 +2,7 @@
 
 import hashlib
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,28 @@ def wait_for_resolve_refresh(seconds: float = 1.0) -> None:
     if not 0.1 <= seconds <= 5.0:
         raise ValueError("Resolve refresh wait must be between 0.1 and 5 seconds")
     time.sleep(seconds)
+
+
+def require_visible_change_or_restore(
+    before_path: str,
+    after_path: str,
+    restore: Any,
+) -> tuple[str, str]:
+    """Reject a template no-op and prove the supplied backup restored the frame."""
+    try:
+        return require_observable_change(before_path, after_path)
+    except OperationError as exc:
+        restored_path = restore()
+        before_hash = hashlib.sha256(Path(before_path).read_bytes()).hexdigest()
+        restored_hash = hashlib.sha256(Path(restored_path).read_bytes()).hexdigest()
+        if restored_hash != before_hash:
+            raise OperationError(
+                "Template was a visible no-op and backup restoration could not be "
+                "verified against the original frame"
+            ) from exc
+        raise OperationError(
+            "Template produced no visible change; backup DRX was restored successfully"
+        ) from exc
 
 
 def register(mcp: Any, services: Services) -> None:
@@ -199,4 +222,94 @@ def register(mcp: Any, services: Services) -> None:
             "observable_change": True,
             "before_sha256": before_hash,
             "after_sha256": after_hash,
+        }
+
+    @mcp.tool()
+    def apply_grade_template_to_locked_target(
+        name: str,
+        backup_drx_path: str,
+        grade_mode: int = 0,
+        frame_strategy: str = "middle",
+    ) -> dict[str, Any]:
+        """Apply a validated template to the lock and restore backup on visible no-op."""
+        resolved_before = services.targets.resolve()
+        target = resolved_before["target"]
+        identifier = target["item_unique_id"] or target["clip_name"]
+        template = services.grades.validate(
+            name, services.connection.status()["version"]
+        )
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        before = services.captures.capture_clip(
+            identifier,
+            frame_strategy,  # type: ignore[arg-type]
+            None,
+            f"{name}_BEFORE_{stamp}",
+            "png",
+            False,
+            True,
+        )
+        operation = services.grades.apply(
+            name,
+            target["track_index"],
+            target["item_index"],
+            grade_mode,
+        )
+        resolved_after = services.targets.resolve()
+        wait_for_resolve_refresh()
+        after = services.captures.capture_clip(
+            identifier,
+            frame_strategy,  # type: ignore[arg-type]
+            None,
+            f"{name}_AFTER_{stamp}",
+            "png",
+            False,
+            True,
+        )
+
+        def restore() -> str:
+            services.colors.apply_drx(
+                target["track_index"],
+                target["item_index"],
+                backup_drx_path,
+                0,
+            )
+            services.targets.resolve()
+            wait_for_resolve_refresh()
+            restored = services.captures.capture_clip(
+                identifier,
+                frame_strategy,  # type: ignore[arg-type]
+                None,
+                f"{name}_RESTORED_{stamp}",
+                "png",
+                False,
+                True,
+            )
+            services.grades.set_validation(name, "failed")
+            return restored["image_path"]
+
+        before_hash, after_hash = require_visible_change_or_restore(
+            before["image_path"], after["image_path"], restore
+        )
+        node_count = services.nodes.inspect(
+            target["track_index"], target["item_index"]
+        )["count"]
+        if (
+            template["expected_node_count"] is not None
+            and node_count != template["expected_node_count"]
+        ):
+            restore()
+            raise OperationError(
+                "Template node-count validation failed; backup DRX was restored"
+            )
+        services.grades.set_validation(name, "validated")
+        return {
+            "template": template,
+            "operation": operation,
+            "target": resolved_after["target"],
+            "node_count": node_count,
+            "before": before,
+            "after": after,
+            "before_sha256": before_hash,
+            "after_sha256": after_hash,
+            "observable_change": True,
         }

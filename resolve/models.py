@@ -42,3 +42,8 @@ class GradeTemplate(BaseModel):
     description: str = ""
     category: str = "custom"
     favorite: bool = False
+    compatible_resolve_version: str | None = None
+    sha256: str = ""
+    expected_node_count: int | None = Field(default=None, ge=1)
+    validation_status: Literal["unvalidated", "validated", "failed"] = "unvalidated"
+    validated_at: str | None = None
