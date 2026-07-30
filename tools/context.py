@@ -9,10 +9,14 @@ from resolve.color import ColorService
 from resolve.connection import ResolveConnection
 from resolve.gallery import GalleryService
 from resolve.grade import GradeWorkflow
+from resolve.lut.application import LutApplicationService
+from resolve.lut.installer import LutInstaller, resolve_lut_root
+from resolve.lut.registry import LutRegistry
 from resolve.markers import MarkerService
 from resolve.media_pool import MediaPoolService
 from resolve.nodes import NodeService
 from resolve.output import OutputPaths
+from resolve.platforms import detect_platform
 from resolve.powergrade import PowerGradeCatalog
 from resolve.project import ProjectService
 from resolve.render import RenderService
@@ -38,6 +42,9 @@ class Services:
     captures: CaptureService
     validation: ValidationService
     targets: TimelineItemService
+    lut_registry: LutRegistry
+    lut_installer: LutInstaller
+    lut_applications: LutApplicationService
 
     @classmethod
     def build(cls) -> "Services":
@@ -49,7 +56,14 @@ class Services:
         captures = CaptureService(connection, output)
         validation = ValidationService(connection, output, captures, grades)
         targets = TimelineItemService(connection, timelines)
-        return cls(
+        platform_paths = detect_platform()
+        lut_registry = LutRegistry(output.directory("presets") / "luts.json")
+        lut_installer = LutInstaller(
+            resolve_lut_root(
+                platform_paths.info.system, platform_paths.info.home_directory
+            )
+        )
+        services = cls(
             connection=connection,
             projects=ProjectService(connection),
             timelines=timelines,
@@ -65,7 +79,12 @@ class Services:
             captures=captures,
             validation=validation,
             targets=targets,
+            lut_registry=lut_registry,
+            lut_installer=lut_installer,
+            lut_applications=None,  # type: ignore[arg-type]
         )
+        services.lut_applications = LutApplicationService(services, lut_registry)
+        return services
 
 
 def register(mcp: Any, services: Services) -> None:
@@ -74,6 +93,7 @@ def register(mcp: Any, services: Services) -> None:
         gallery_tools,
         grade,
         inspect,
+        lut_tools,
         node_tools,
         render_tools,
         target_tools,
@@ -91,5 +111,6 @@ def register(mcp: Any, services: Services) -> None:
         gallery_tools,
         capture_tools,
         validation_tools,
+        lut_tools,
     ):
         module.register(mcp, services)
