@@ -16,6 +16,7 @@ dev = ["pytest>=8", "ruff>=0.9", "mypy>=1.14"]
 
 [project.scripts]
 davinci-mcp = "server:main"
+davinci-grade = "resolve.lut.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["resolve", "tools"]
