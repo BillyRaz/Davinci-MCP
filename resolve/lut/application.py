@@ -68,7 +68,11 @@ class LutApplicationService:
         return self.services.targets.item()
 
     def prepare(
-        self, profile_name: str, lut_identifier: str, backup_drx_path: str
+        self,
+        profile_name: str,
+        lut_identifier: str,
+        backup_drx_path: str,
+        bootstrap_empty_node_drx_path: str | None = None,
     ) -> dict[str, Any]:
         if self.transaction is not None:
             raise OperationError("A LUT application transaction is already active")
@@ -91,6 +95,26 @@ class LutApplicationService:
             raise OperationError("Could not create and load disposable local version")
         try:
             temporary_graph = graph_snapshot(item.GetNodeGraph())
+            if temporary_graph["count"] != 1:
+                bootstrap = (
+                    Path(bootstrap_empty_node_drx_path)
+                    if bootstrap_empty_node_drx_path
+                    else None
+                )
+                if bootstrap is None or not bootstrap.is_file() or not bootstrap.read_bytes():
+                    raise OperationError(
+                        "Disposable version cloned a multi-node user graph; a verified "
+                        "one-empty-node bootstrap DRX is required"
+                    )
+                if not item.GetNodeGraph().ApplyGradeFromDRX(str(bootstrap.resolve()), 0):
+                    raise OperationError(
+                        "Resolve rejected the one-empty-node bootstrap DRX"
+                    )
+                temporary_graph = graph_snapshot(item.GetNodeGraph())
+            if temporary_graph["count"] != 1:
+                raise OperationError(
+                    "Bootstrap DRX did not produce exactly one owned node"
+                )
             require_owned_empty_node(temporary_graph["nodes"], 1)
         except Exception:
             item.LoadVersionByName(current["versionName"], current["versionType"])

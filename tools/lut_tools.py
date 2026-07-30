@@ -121,11 +121,17 @@ def register(mcp: Any, services: Services) -> None:
 
     @mcp.tool()
     def prepare_lut_for_locked_timeline_item(
-        profile_name: str, lut_identifier: str, backup_drx_path: str
+        profile_name: str,
+        lut_identifier: str,
+        backup_drx_path: str,
+        bootstrap_empty_node_drx_path: str | None = None,
     ) -> dict[str, Any]:
         """Create a disposable owned local version after lock/hash/backup validation."""
         return services.lut_applications.prepare(
-            profile_name, lut_identifier, backup_drx_path
+            profile_name,
+            lut_identifier,
+            backup_drx_path,
+            bootstrap_empty_node_drx_path,
         )
 
     @mcp.tool()

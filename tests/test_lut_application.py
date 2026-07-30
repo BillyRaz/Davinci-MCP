@@ -33,6 +33,9 @@ class Graph:
         self.lut = value
         return True
 
+    def ApplyGradeFromDRX(self, _path: str, _mode: int) -> bool:
+        return True
+
 
 class Item:
     def __init__(self) -> None:
@@ -46,7 +49,12 @@ class Item:
         return self.graphs[self.current]
 
     def AddVersion(self, name: str, _kind: int) -> bool:
-        self.graphs[name] = Graph()
+        current = self.graphs[self.current]
+        self.graphs[name] = (
+            MultiGraph([Graph() for _ in current.graphs])
+            if isinstance(current, MultiGraph)
+            else Graph()
+        )
         return True
 
     def LoadVersionByName(self, name: str, _kind: int) -> bool:
@@ -126,3 +134,45 @@ def test_getlut_mismatch_restores(tmp_path: Path) -> None:
     result = application.apply()
     assert result["status"] == "RESTORED_AFTER_FAILURE"
     assert item.current == "Version 1"
+
+
+def test_multinode_clone_requires_verified_bootstrap_drx(tmp_path: Path) -> None:
+    application, item, _targets = service(tmp_path)
+    backup = tmp_path / "backup.drx"
+    backup.write_bytes(b"grade")
+    second = Graph()
+    item.graphs["Version 1"] = MultiGraph([item.graphs["Version 1"], second])
+    with pytest.raises(OperationError, match="bootstrap DRX"):
+        application.prepare("APPLICATION_V1", "look.cube", str(backup))
+    assert item.current == "Version 1"
+    bootstrap = tmp_path / "blank.drx"
+    bootstrap.write_bytes(b"one empty node")
+    prepared = application.prepare(
+        "APPLICATION_V1", "look.cube", str(backup), str(bootstrap)
+    )
+    assert prepared["temporary_graph"]["count"] == 1
+    application.restore()
+
+
+class MultiGraph:
+    def __init__(self, graphs: list[Graph]) -> None:
+        self.graphs = graphs
+
+    def GetNumNodes(self) -> int:
+        return len(self.graphs)
+
+    def GetNodeLabel(self, index: int) -> str:
+        return self.graphs[index - 1].GetNodeLabel(1)
+
+    def GetLUT(self, index: int) -> str:
+        return self.graphs[index - 1].GetLUT(1)
+
+    def GetToolsInNode(self, index: int) -> list[str]:
+        return self.graphs[index - 1].GetToolsInNode(1)
+
+    def GetNodeCacheMode(self, index: int) -> int:
+        return self.graphs[index - 1].GetNodeCacheMode(1)
+
+    def ApplyGradeFromDRX(self, _path: str, _mode: int) -> bool:
+        self.graphs = [Graph()]
+        return True
